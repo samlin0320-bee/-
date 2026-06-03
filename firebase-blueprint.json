@@ -1,0 +1,37 @@
+{
+  "entities": {
+    "SavedChart": {
+      "title": "Saved Chart",
+      "description": "A user's saved astrology chart data.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user who owns this chart." },
+        "name": { "type": "string", "description": "The name given to the chart." },
+        "birthData": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "date": { "type": "string", "format": "date-time" },
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "location": { "type": "string" }
+          },
+          "required": ["name", "date", "lat", "lng"]
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "A list of tags for categorization."
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "birthData", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/charts/{chartId}": {
+      "schema": "SavedChart",
+      "description": "Collection of saved astrology charts."
+    }
+  }
+}
