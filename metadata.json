@@ -1,5 +1,5 @@
 {
-  "name": "星盤分析系統 3.0",
+  "name": "專業占星分析系統 4.0",
   "description": "全繁體中文星盤分析工具，支援南印度、北印度、西洋三盤同顯，自動判斷大象位格局，並提供木星土星換位主題報告。",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

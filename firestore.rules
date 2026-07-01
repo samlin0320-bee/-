@@ -30,9 +30,16 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
     function isValidChart(data) {
-      return data.userId is string &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+      return data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.birthData is map &&
+             data.createdAt is string;
+    }
+    function isValidReport(data) {
+      return data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.userName is string && data.userName.size() > 0 && data.userName.size() < 200 &&
+             data.reportTitle is string && data.reportTitle.size() > 0 && data.reportTitle.size() < 505 &&
+             data.reportText is string && data.reportText.size() > 0 && data.reportText.size() < 1000000 &&
              data.createdAt is string;
     }
 
@@ -40,9 +47,15 @@ service cloud.firestore {
     // Rules
     // ===============================================================
     match /charts/{chartId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && isValidChart(request.resource.data) && request.resource.data.userId == request.auth.uid;
       allow update: if isAuthenticated() && isDocOwner() && isValidChart(request.resource.data) && uidUnchanged();
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+    match /reports/{reportId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidReport(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && isDocOwner() && isValidReport(request.resource.data) && uidUnchanged();
       allow delete: if isAuthenticated() && isDocOwner();
     }
   }

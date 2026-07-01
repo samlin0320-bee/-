@@ -2,15 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { calculateChart, ChartData, getPlanetName, getZodiacName, calculateGochar, PlanetPosition, getFriendshipName, getDignityName, getPlanetProperties, getFunctionalDignity, getFunctionalDignityName, getFunctionalDignityColor } from './utils/astrology';
 import VedicAnalysis from './components/VedicAnalysis';
 import SouthIndianChart from './components/SouthIndianChart';
+import { CircularVedicChart } from './components/CircularVedicChart';
+import { VargaExplanationPanel } from './components/VargaExplanationPanel';
 import { Download, Upload, Shield as ShieldIcon, Info } from 'lucide-react';
 import NorthIndianChart from './components/NorthIndianChart';
 import WesternChart from './components/WesternChart';
+import VedicChakraChart from './components/VedicChakraChart';
 import MedicalReport from './components/MedicalReport';
 import AspectGrid from './components/AspectGrid';
 import AshtakavargaReport from './components/AshtakavargaReport';
 import GocharaReport from './components/GocharaReport';
-import { Calendar, Clock, MapPin, Settings, FileText, LayoutDashboard, Plus, Trash2, Search, Save, User, FolderOpen, LogIn, LogOut, Tag, X, Code, Globe, Sun as SunIcon } from 'lucide-react';
-import { auth, db, googleProvider, signInWithPopup, signOut, onAuthStateChanged, collection, addDoc, query, where, onSnapshot, deleteDoc, doc, Timestamp, User as FirebaseUser } from './firebase';
+import { Calendar, Clock, MapPin, Settings, FileText, LayoutDashboard, Plus, Trash2, Search, Save, User, FolderOpen, LogIn, LogOut, Tag, X, Code, Globe, Sun as SunIcon, Compass, Square, Diamond, Layers, BookOpen, AlertCircle } from 'lucide-react';
+import { auth, db, googleProvider, signInWithPopup, signOut, onAuthStateChanged, collection, addDoc, query, where, onSnapshot, deleteDoc, doc, updateDoc, Timestamp, User as FirebaseUser } from './firebase';
 
 interface Rule {
   id: string;
@@ -22,6 +25,10 @@ interface Rule {
 import TransitsEventLog from './components/TransitsEventLog';
 import ChartDetailsPanel from './components/ChartDetailsPanel';
 import TransitMasterReport from './components/TransitMasterReport';
+import { determineDST } from './utils/timezoneUtils';
+import { SolarReturnTab } from './components/SolarReturnTab';
+import { SynastryCompatibilityTab } from './components/SynastryCompatibilityTab';
+import { AlmutenToolsTab } from './components/AlmutenToolsTab';
 
 import { TabGrahas } from './components/VedicTabs/TabGrahas';
 import { TabUpagrahas } from './components/VedicTabs/TabUpagrahas';
@@ -33,6 +40,7 @@ import { TabMisc } from './components/VedicTabs/TabMisc';
 import { TabReportPrompts } from './components/VedicTabs/TabReportPrompts';
 import RulesReference from './components/RulesReference';
 import ChartLegend from './components/ChartLegend';
+import * as XLSX from 'xlsx';
 
 interface SavedChart {
   id: string;
@@ -44,6 +52,8 @@ interface SavedChart {
   isSidereal: boolean;
   ayanamsaType?: string;
   tags?: string[];
+  notes?: string;
+  isFavorite?: boolean;
   userId: string;
   createdAt: any;
   birthData?: {
@@ -106,10 +116,12 @@ export default function App() {
   const [lng, setLng] = useState('120.96'); // Hsinchu
   const [timezone, setTimezone] = useState('8');
   const [isDST, setIsDST] = useState(false);
+  const [autoDST, setAutoDST] = useState(true);
+  const [detectedRegion, setDetectedRegion] = useState('');
   const [isSidereal, setIsSidereal] = useState(true);
   const [ayanamsaType, setAyanamsaType] = useState('Lahiri');
   const [chartData, setChartData] = useState<ChartData | null>(null);
-  const [activeTab, setActiveTab] = useState<'charts' | 'vargas' | 'dashas' | 'data' | 'yogas' | 'transit' | 'sav' | 'analysis' | 'events' | 'rules' | 'reports'>('charts');
+  const [activeTab, setActiveTab] = useState<'charts' | 'vargas' | 'dashas' | 'data' | 'yogas' | 'transit' | 'sav' | 'analysis' | 'events' | 'rules' | 'reports' | 'solar-return' | 'synastry' | 'medical' | 'grahas' | 'upagrahas' | 'sensitive' | 'arudha' | 'relations' | 'shadbala' | 'misc' | 'almuten-tools'>('charts');
   const [selectedVarga, setSelectedVarga] = useState('D1');
   const [expandedDasha, setExpandedDasha] = useState<string | null>(null);
   const [expandedSubDasha, setExpandedSubDasha] = useState<string | null>(null);
@@ -124,6 +136,10 @@ export default function App() {
   // Saved Charts State
   const [savedCharts, setSavedCharts] = useState<SavedChart[]>([]);
   const [showSavedCharts, setShowSavedCharts] = useState(false);
+  const [chartNotesInput, setChartNotesInput] = useState('');
+  const [chartIsFavoriteInput, setChartIsFavoriteInput] = useState(false);
+  const [caseSearchQuery, setCaseSearchQuery] = useState('');
+  const [caseSelectedSmartCategory, setCaseSelectedSmartCategory] = useState<string | null>(null);
 
   // Rule Builder State
   const [rules, setRules] = useState<Rule[]>([]);
@@ -145,7 +161,15 @@ export default function App() {
   ]);
   const [slotOffsets, setSlotOffsets] = useState<[number, number]>([0, 0]);
   const [slotChartData, setSlotChartData] = useState<[ChartData | null, ChartData | null]>([null, null]);
-  const [vargaMode, setVargaMode] = useState<'grid' | 'north' | 'south'>('grid');
+  const [vargaMode, setVargaMode] = useState<'grid' | 'north' | 'south' | 'circular'>('grid');
+  
+  // Hora Edition 3-Pane Dashboard Layout State
+  const [chartsLayoutMode, setChartsLayoutMode] = useState<'standard' | 'horao'>('horao');
+  const [horaSlots, setHoraSlots] = useState<{ vargaId: string; style: 'north' | 'south' | 'chakra' }[]>([
+    { vargaId: 'D1', style: 'chakra' },
+    { vargaId: 'D9', style: 'north' },
+    { vargaId: 'D2', style: 'south' }
+  ]);
 
   useEffect(() => {
     if (chartData) {
@@ -189,6 +213,9 @@ export default function App() {
         const unsubSnap = onSnapshot(q, (snapshot) => {
           const charts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SavedChart));
           setSavedCharts(charts);
+        }, (error) => {
+          console.warn("Firestore onSnapshot error:", error);
+          setSavedCharts([]);
         });
         return () => unsubSnap();
       } else {
@@ -199,6 +226,20 @@ export default function App() {
     handleCalculate();
     return () => unsubscribe();
   }, []);
+
+  // Synchronize timezone and DST automatically based on coordinates & birth date
+  useEffect(() => {
+    if (autoDST) {
+      const latVal = parseFloat(lat);
+      const lngVal = parseFloat(lng);
+      if (!isNaN(latVal) && !isNaN(lngVal)) {
+        const result = determineDST(date, time, latVal, lngVal);
+        setIsDST(result.isDST);
+        setTimezone(result.timezone);
+        setDetectedRegion(result.region);
+      }
+    }
+  }, [date, time, lat, lng, autoDST]);
 
   useEffect(() => {
     if (!chartData) return;
@@ -289,11 +330,15 @@ export default function App() {
         isSidereal,
         ayanamsaType,
         tags: chartTags,
+        notes: chartNotesInput,
+        isFavorite: chartIsFavoriteInput,
         createdAt: new Date().toISOString()
       };
       await addDoc(collection(db, 'charts'), chartToSave);
       alert('星盤已儲存至雲端！');
       setChartTags([]);
+      setChartNotesInput('');
+      setChartIsFavoriteInput(false);
     } catch (err) {
       console.error('Save failed', err);
       alert('儲存失敗，請檢查網路連線');
@@ -306,6 +351,8 @@ export default function App() {
     setTime(chart.time);
     setLat(chart.lat);
     setLng(chart.lng);
+    setChartNotesInput(chart.notes || '');
+    setChartIsFavoriteInput(!!chart.isFavorite);
     if (chart.birthData?.location) {
       setLocationQuery(chart.birthData.location);
     } else {
@@ -332,6 +379,51 @@ export default function App() {
     } catch (err) {
       console.error('Delete failed', err);
     }
+  };
+
+  const toggleFavoriteChart = async (id: string, currentVal: boolean, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await updateDoc(doc(db, 'charts', id), { isFavorite: !currentVal });
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+    }
+  };
+
+  const getSmartCategoriesForChart = (chart: SavedChart): string[] => {
+    const categories: string[] = [];
+    const notesLower = (chart.notes || '').toLowerCase();
+    const tags = (chart.tags || []).map(t => t.toLowerCase());
+    
+    if (chart.isFavorite) {
+      categories.push('⭐️ 我的最愛');
+    }
+    
+    if (tags.some(t => t.includes('事業') || t.includes('工作') || t.includes('職業') || t.includes('官祿')) || 
+        notesLower.includes('事業') || notesLower.includes('工作') || notesLower.includes('創業') || notesLower.includes('公司') || notesLower.includes('升職')) {
+      categories.push('💼 事業發展');
+    }
+    
+    if (tags.some(t => t.includes('財') || t.includes('投資') || t.includes('金錢') || t.includes('理財')) || 
+        notesLower.includes('財') || notesLower.includes('投資') || notesLower.includes('賺錢') || notesLower.includes('股票') || notesLower.includes('資產')) {
+      categories.push('💰 財富投資');
+    }
+    
+    if (tags.some(t => t.includes('健康') || t.includes('病') || t.includes('疾厄') || t.includes('醫療') || t.includes('身體')) || 
+        notesLower.includes('健康') || notesLower.includes('生病') || notesLower.includes('住院') || notesLower.includes('手術') || notesLower.includes('身體')) {
+      categories.push('🏥 健康關注');
+    }
+    
+    if (tags.some(t => t.includes('感情') || t.includes('桃花') || t.includes('婚') || t.includes('愛') || t.includes('配偶')) || 
+        notesLower.includes('感情') || notesLower.includes('桃花') || notesLower.includes('結婚') || notesLower.includes('離婚') || notesLower.includes('分手') || notesLower.includes('伴侶')) {
+      categories.push('💑 感情桃花');
+    }
+    
+    if (categories.length === 0) {
+      categories.push('🔮 一般諮詢');
+    }
+    
+    return categories;
   };
 
   const handleCalculate = () => {
@@ -388,13 +480,119 @@ export default function App() {
     return false;
   };
 
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!user) {
+      alert("請先登入才能匯入星盤！");
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<any>(firstSheet, { raw: false });
+        
+        let newCount = 0;
+        let updateCount = 0;
+        
+        for (const row of rows) {
+          if (!row) continue;
+          
+          // Try to find columns by common names (case-insensitive)
+          const keys = Object.keys(row);
+          const findKey = (keywords: string[]) => keys.find(k => keywords.some(kw => k.toLowerCase().includes(kw.toLowerCase())));
+          
+          const tagKey = findKey(['tag', '標籤', '分類']);
+          const nameKey = findKey(['name', '姓名', '名字', '名稱']);
+          const dateKey = findKey(['date', 'time', '日期', '時間', '出生']);
+          const locKey = findKey(['loc', 'place', 'city', '地點', '城市', '出生地']);
+          
+          // Fallback to array indices if it looks like they didn't use headers
+          let tag = tagKey ? row[tagKey]?.toString().trim() : "";
+          let name = nameKey ? row[nameKey]?.toString().trim() : "";
+          let birthTimeStr = dateKey ? row[dateKey]?.toString().trim() : "";
+          let birthPlace = locKey ? row[locKey]?.toString().trim() : "";
+          
+          // If we couldn't find a name by header, try to guess from the first few columns of Object.values
+          if (!name) {
+             const vals = Object.values(row);
+             if (vals.length >= 2 && !nameKey) {
+                // assume col 0 is tag, col 1 is name, col 2 is date, col 3 is loc
+                tag = vals[0]?.toString().trim() || "";
+                name = vals[1]?.toString().trim() || "";
+                birthTimeStr = vals[2]?.toString().trim() || "";
+                birthPlace = vals[3]?.toString().trim() || "";
+             } else if (vals.length > 0 && !nameKey) {
+                // assume col 0 is name
+                name = vals[0]?.toString().trim() || "";
+             }
+          }
+
+          if (!name) continue;
+          
+          // Parse date time if it looks like "1990/01/01 12:00"
+          let parsedDate = "1990-01-01";
+          let parsedTime = "12:00";
+          const match = birthTimeStr.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s+(\d{1,2}):(\d{1,2})/);
+          if (match) {
+            parsedDate = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+            parsedTime = `${match[4].padStart(2, '0')}:${match[5].padStart(2, '0')}`;
+          }
+          
+          // Check if there is an existing chart with the same name
+          const existing = savedCharts.find(c => c.name === name);
+          
+          const chartDataToSave = {
+            name,
+            date: parsedDate,
+            time: parsedTime,
+            lat: existing ? existing.lat : "25.03", // Default Taipei
+            lng: existing ? existing.lng : "121.56",
+            isSidereal: true, // Default to true based on app logic
+            ayanamsaType: "Lahiri",
+            userId: user.uid,
+            tags: [tag].filter(Boolean),
+            birthData: { location: birthPlace },
+            createdAt: new Date().toISOString()
+          };
+
+          if (existing) {
+            console.log("Deleting existing document:", existing.id);
+            await deleteDoc(doc(db, 'charts', existing.id));
+            updateCount++;
+          } else {
+            newCount++;
+          }
+          console.log("Adding new document:", chartDataToSave);
+          await addDoc(collection(db, 'charts'), chartDataToSave);
+        }
+        
+        if (newCount === 0 && updateCount === 0) {
+           alert("匯入失敗：找不到有效的姓名資料。請確認 Excel 包含「姓名」與「出生時間」欄位。");
+           return;
+        }
+        alert(`匯入完成！新增 ${newCount} 筆，更新/取代舊資料 ${updateCount} 筆。`);
+      } catch (err) {
+        console.error("Error parsing Excel:", err);
+        alert("匯入失敗，請確認檔案格式是否正確。");
+      }
+    };
+    reader.readAsBinaryString(file);
+    // Reset the input
+    e.target.value = '';
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
       <header className="bg-indigo-600 text-white shadow-md py-4 px-6 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <LayoutDashboard className="w-6 h-6" />
-            專業占星分析系統 4.0
+            專業占星 analysis 系統 4.0
           </h1>
           <div className="flex items-center gap-4">
             {user ? (
@@ -431,52 +629,160 @@ export default function App() {
           
           {showSavedCharts ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-1">
-                <button 
-                  onClick={() => setFilterTag(null)}
-                  className={`px-2 py-1 rounded text-[10px] font-bold border ${!filterTag ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200'}`}
-                >
-                  全部
-                </button>
-                {Array.from(new Set(savedCharts.flatMap(c => c.tags || []))).map(tag => (
+              {/* Search Bar */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="🔍 搜尋姓名/備註/標籤..."
+                  value={caseSearchQuery}
+                  onChange={(e) => setCaseSearchQuery(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl pl-3 pr-8 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-left bg-white text-slate-700"
+                />
+                {caseSearchQuery && (
                   <button 
-                    key={tag}
-                    onClick={() => setFilterTag(tag)}
-                    className={`px-2 py-1 rounded text-[10px] font-bold border ${filterTag === tag ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200'}`}
+                    onClick={() => setCaseSearchQuery('')} 
+                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
                   >
-                    {tag}
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                ))}
+                )}
               </div>
+
+              {/* Smart Categories */}
+              <div className="space-y-1 text-left">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">智能搜尋分類</label>
+                <div className="flex flex-wrap gap-1">
+                  <button
+                    onClick={() => setCaseSelectedSmartCategory(null)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${!caseSelectedSmartCategory ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    全部 ({savedCharts.length})
+                  </button>
+                  {['⭐️ 我的最愛', '💼 事業發展', '💰 財富投資', '🏥 健康關注', '💑 感情桃花', '🔮 一般諮詢'].map(cat => {
+                    const count = savedCharts.filter(c => getSmartCategoriesForChart(c).includes(cat)).length;
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setCaseSelectedSmartCategory(cat)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${caseSelectedSmartCategory === cat ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                      >
+                        {cat} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">
+                <div className="flex flex-wrap gap-1 text-left">
+                  <span className="text-[10px] text-slate-400 font-bold self-center mr-1">標籤篩選:</span>
+                  <button 
+                    onClick={() => setFilterTag(null)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${!filterTag ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200'}`}
+                  >
+                    全部
+                  </button>
+                  {Array.from(new Set(savedCharts.flatMap(c => c.tags || []))).map(tag => (
+                    <button 
+                      key={tag}
+                      onClick={() => setFilterTag(tag)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${filterTag === tag ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200'}`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+                
+                <label className="cursor-pointer flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded border border-indigo-200 transition-colors">
+                  <Upload className="w-3 h-3" />
+                  匯入 Excel
+                  <input 
+                    type="file" 
+                    accept=".xlsx, .xls, .csv" 
+                    className="hidden" 
+                    onChange={handleFileImport}
+                  />
+                </label>
+              </div>
+
               <div className="space-y-3">
-                {savedCharts.length === 0 ? (
-                  <div className="text-gray-500 text-sm text-center py-4">尚未儲存任何星盤</div>
+                {savedCharts.filter(c => {
+                  if (filterTag && !c.tags?.includes(filterTag)) return false;
+                  if (caseSelectedSmartCategory) {
+                    if (!getSmartCategoriesForChart(c).includes(caseSelectedSmartCategory)) return false;
+                  }
+                  if (caseSearchQuery.trim()) {
+                    const q = caseSearchQuery.toLowerCase();
+                    const nameMatch = c.name.toLowerCase().includes(q);
+                    const dateMatch = c.date.includes(q);
+                    const notesMatch = (c.notes || '').toLowerCase().includes(q);
+                    const tagsMatch = (c.tags || []).some(t => t.toLowerCase().includes(q));
+                    return nameMatch || dateMatch || notesMatch || tagsMatch;
+                  }
+                  return true;
+                }).length === 0 ? (
+                  <div className="text-gray-500 text-sm text-center py-4">無符合篩選的個案星盤</div>
                 ) : (
                   savedCharts
-                    .filter(c => !filterTag || c.tags?.includes(filterTag))
+                    .filter(c => {
+                      if (filterTag && !c.tags?.includes(filterTag)) return false;
+                      if (caseSelectedSmartCategory) {
+                        if (!getSmartCategoriesForChart(c).includes(caseSelectedSmartCategory)) return false;
+                      }
+                      if (caseSearchQuery.trim()) {
+                        const q = caseSearchQuery.toLowerCase();
+                        const nameMatch = c.name.toLowerCase().includes(q);
+                        const dateMatch = c.date.includes(q);
+                        const notesMatch = (c.notes || '').toLowerCase().includes(q);
+                        const tagsMatch = (c.tags || []).some(t => t.toLowerCase().includes(q));
+                        return nameMatch || dateMatch || notesMatch || tagsMatch;
+                      }
+                      return true;
+                    })
                     .map(chart => (
                       <div 
                         key={chart.id} 
                         onClick={() => loadChart(chart)}
-                        className="p-3 border border-gray-200 rounded-lg hover:border-indigo-500 cursor-pointer transition-colors flex justify-between items-center group"
+                        className="p-3 border border-gray-200 rounded-xl hover:border-indigo-500 cursor-pointer transition-all flex flex-col space-y-2 group bg-slate-50/50 hover:bg-white text-left relative"
                       >
-                        <div>
-                          <div className="font-medium text-gray-800">{chart.name}</div>
-                          <div className="text-xs text-gray-500">{chart.date} {chart.time}</div>
-                          {chart.tags && chart.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {chart.tags.map(t => (
-                                <span key={t} className="text-[8px] bg-gray-100 text-gray-500 px-1 rounded">{t}</span>
-                              ))}
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
+                              <span>{chart.name}</span>
+                              <button
+                                onClick={(e) => toggleFavoriteChart(chart.id, !!chart.isFavorite, e)}
+                                className="text-amber-500 hover:scale-125 transition-transform p-0.5 focus:outline-none"
+                                title={chart.isFavorite ? "取消最愛" : "加入最愛"}
+                              >
+                                {chart.isFavorite ? "★" : "☆"}
+                              </button>
                             </div>
-                          )}
+                            <div className="text-[11px] text-gray-500 font-medium">{chart.date} {chart.time}</div>
+                          </div>
+                          
+                          <button 
+                            onClick={(e) => deleteChart(chart.id, e)}
+                            className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                            title="刪除星盤"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <button 
-                          onClick={(e) => deleteChart(chart.id, e)}
-                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+
+                        {chart.notes && (
+                          <div className="text-[11px] bg-amber-50/70 text-amber-900 border border-amber-100/60 rounded-lg p-2 font-medium leading-relaxed">
+                            📝 備註: {chart.notes}
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-1">
+                          {getSmartCategoriesForChart(chart).filter(cat => cat !== '⭐️ 我的最愛').map(cat => (
+                            <span key={cat} className="text-[8px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">{cat}</span>
+                          ))}
+                          {chart.tags && chart.tags.map(t => (
+                            <span key={t} className="text-[8px] bg-indigo-50 text-indigo-600 border border-indigo-100/50 px-1.5 py-0.5 rounded font-bold">#{t}</span>
+                          ))}
+                        </div>
                       </div>
                     ))
                 )}
@@ -584,6 +890,38 @@ export default function App() {
                 </div>
               </div>
 
+              {/* DST & Timezone Auto Detection Switch */}
+              <div className="bg-gradient-to-r from-indigo-50/70 to-purple-50/70 border border-indigo-100 rounded-xl p-3 shadow-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-bold text-indigo-950">⚡ 智慧自動判斷時區及日光節約</span>
+                  </div>
+                  <button
+                    onClick={() => setAutoDST(!autoDST)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      autoDST ? 'bg-indigo-600' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        autoDST ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                {autoDST ? (
+                  <p className="text-[11px] text-indigo-700/90 font-medium leading-normal pl-4 flex items-center gap-1">
+                    <span>📍</span> 系統已根據經緯度與日期精確解鎖並判定：
+                    <span className="font-extrabold text-indigo-900 underline decoration-indigo-300">{detectedRegion || '偵測中...'}</span>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-gray-400 font-medium pl-4">
+                    ⚠️ 智慧判定已關閉，切換為「手動覆蓋變更」模式。可以手動設定以下參數。
+                  </p>
+                )}
+              </div>
+
               {/* Timezone and DST */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -592,14 +930,19 @@ export default function App() {
                   </label>
                   <select
                     value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                    onChange={(e) => {
+                      setTimezone(e.target.value);
+                      setAutoDST(false);
+                    }}
+                    className={`w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-semibold ${
+                      autoDST ? 'border-indigo-200 text-indigo-800' : 'border-gray-300 text-gray-700'
+                    }`}
                   >
                     {Array.from({ length: 25 }).map((_, i) => {
                       const tz = i - 12;
                       return (
                         <option key={tz} value={tz}>
-                          GMT {tz >= 0 ? '+' : ''}{tz}
+                          GMT {tz >= 0 ? '+' : ''}{tz} {autoDST && parseFloat(timezone) === tz ? ' (自動)' : ''}
                         </option>
                       );
                     })}
@@ -610,12 +953,15 @@ export default function App() {
                     <SunIcon className="w-4 h-4 text-amber-500" /> 日光節約
                   </label>
                   <button
-                    onClick={() => setIsDST(!isDST)}
-                    className={`w-full px-3 py-2 border rounded-lg flex items-center justify-center gap-2 transition-all text-sm ${
+                    onClick={() => {
+                      setIsDST(!isDST);
+                      setAutoDST(false);
+                    }}
+                    className={`w-full px-3 py-2 border rounded-lg flex items-center justify-center gap-2 transition-all text-sm font-bold ${
                       isDST 
-                      ? 'bg-amber-50 border-amber-200 text-amber-700 font-bold' 
+                      ? 'bg-amber-50 border-amber-200 text-amber-700' 
                       : 'bg-gray-50 border-gray-300 text-gray-500'
-                    }`}
+                    } ${autoDST ? 'border-indigo-300/60 ring-2 ring-indigo-500/10' : ''}`}
                   >
                     {isDST ? '✅ 已開啟' : '❌ 已關閉'}
                   </button>
@@ -696,6 +1042,41 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Added Notes and Favorite Inputs for Case details */}
+              <div className="space-y-3 bg-slate-55 p-3.5 rounded-xl border border-slate-200 text-left">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer" onClick={() => setChartIsFavoriteInput(!chartIsFavoriteInput)}>
+                    <span className="text-amber-500 text-sm">★</span> 加入我的最愛 (我的最愛*)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setChartIsFavoriteInput(!chartIsFavoriteInput)}
+                    className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      chartIsFavoriteInput ? 'bg-amber-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        chartIsFavoriteInput ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <span>📝 個案備註欄位 (相關資料)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="輸入個案注意事項、相關背景或備忘錄資料..."
+                    value={chartNotesInput}
+                    onChange={(e) => setChartNotesInput(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none font-medium text-slate-750 bg-white"
+                  />
+                </div>
+              </div>
+
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={handleCalculate}
@@ -768,6 +1149,8 @@ export default function App() {
               { id: 'gochar', label: '過運分析 (Gochar)' },
               { id: 'yogas', label: '格局分析 (Yogas)' },
               { id: 'transit', label: '流年報告 (Transit)' },
+              { id: 'solar-return', label: '太陽返照 (Solar Return)' },
+              { id: 'synastry', label: '👥 雙人合盤 (Synastry)' },
               { id: 'events', label: '推運事件簿 (Events)' },
               { id: 'medical', label: '醫療預警 (Medical)' },
               { id: 'sav', label: '動態力場 (SAV / Ashtakavarga)' },
@@ -779,6 +1162,8 @@ export default function App() {
               { id: 'relations', label: '敵友 (Relations)' },
               { id: 'shadbala', label: '星力 (Shadbala)' },
               { id: 'misc', label: '其他 (Misc)' },
+              { id: 'reports', label: '智能分析報告 (Reports)' },
+              { id: 'almuten-tools', label: '🔮 宮位高階工具 (Almuten Tools)' },
               { id: 'rules', label: '規則 (Rules & Logic)' }
             ].map(tab => (
               <button
@@ -897,6 +1282,26 @@ export default function App() {
                           </>
                         )}
                         <div className="h-4 w-px bg-gray-200 mx-2"></div>
+                        <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                          <button
+                            onClick={() => setChartsLayoutMode('standard')}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                              chartsLayoutMode === 'standard' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            標準佈局
+                          </button>
+                          <button
+                            onClick={() => setChartsLayoutMode('horao')}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                              chartsLayoutMode === 'horao' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            <span>Hora 三盤連署</span>
+                            <span className="bg-amber-400 text-black text-[9px] px-1 rounded-full animate-bounce">PRO</span>
+                          </button>
+                        </div>
+                        <div className="h-4 w-px bg-gray-200 mx-2"></div>
                         <button 
                           onClick={() => setIsProView(!isProView)}
                           className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
@@ -914,34 +1319,263 @@ export default function App() {
                           <Code className="w-5 h-5" />
                         </button>
                       </div>
-                      <div className={`grid grid-cols-1 ${isProView ? 'xl:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-3'} gap-8`}>
-                        {isProView ? (
-                          <>
-                            <div className="space-y-4 xl:col-span-1">
-                              <h3 className="text-center font-semibold text-gray-800">南印度盤 (D1)</h3>
-                              <SouthIndianChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
+
+                      {chartsLayoutMode === 'horao' ? (
+                        <div className="space-y-8">
+                          {/* 3-Pane Interactive Grid */}
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {horaSlots.map((slot, idx) => {
+                              // Calculate divisional chart data dynamically
+                              const vconfig = chartData.vargas.find(vc => vc.id === slot.vargaId);
+                              const vchartData = vconfig ? {
+                                ...chartData,
+                                ascendantSign: vconfig.ascendantSign,
+                                planets: Object.fromEntries(
+                                  Object.entries(chartData.planets).map(([pname, pval]: [string, any]) => [
+                                    pname,
+                                    { ...pval, sign: vconfig.planets[pname]?.sign ?? pval.sign }
+                                  ])
+                                )
+                              } as ChartData : chartData;
+
+                              return (
+                                <div key={idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 flex flex-col justify-between">
+                                  {/* Pane Header Control */}
+                                  <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
+                                    <div className="flex items-center gap-1.5Packed">
+                                      <select
+                                        value={slot.vargaId}
+                                        onChange={(e) => {
+                                          const newSl = [...horaSlots];
+                                          newSl[idx].vargaId = e.target.value;
+                                          setHoraSlots(newSl);
+                                        }}
+                                        className="bg-white border border-slate-200 rounded-lg py-1 px-1.5 text-xs font-black text-indigo-700 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                                      >
+                                        {chartData.vargas.map(v => (
+                                          <option key={v.id} value={v.id}>{v.id} {v.name.split(' ')[0]}</option>
+                                        ))}
+                                      </select>
+                                      <span className="text-[10px] font-bold text-slate-400 truncate max-w-[80px]">
+                                        {vconfig?.name}
+                                      </span>
+                                    </div>
+
+                                    {/* Style switcher */}
+                                    <div className="flex bg-slate-200/65 p-0.5 rounded-lg border border-slate-200">
+                                      <button
+                                        onClick={() => {
+                                          const newSl = [...horaSlots];
+                                          newSl[idx].style = 'north';
+                                          setHoraSlots(newSl);
+                                        }}
+                                        className={`p-1 rounded transition-all ${slot.style === 'north' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="北印度 (Diamond Grid)"
+                                      >
+                                        <Diamond className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          const newSl = [...horaSlots];
+                                          newSl[idx].style = 'south';
+                                          setHoraSlots(newSl);
+                                        }}
+                                        className={`p-1 rounded transition-all ${slot.style === 'south' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="南印度 (Square Grid)"
+                                      >
+                                        <Square className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          const newSl = [...horaSlots];
+                                          newSl[idx].style = 'chakra';
+                                          setHoraSlots(newSl);
+                                        }}
+                                        className={`p-1 rounded transition-all ${slot.style === 'chakra' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="圓形星盤 (Chakra Wheel)"
+                                      >
+                                        <Compass className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Selected Chart Rendering */}
+                                  <div className="flex-1 flex items-center justify-center p-1 bg-white rounded-xl border border-slate-100 min-h-[290px]">
+                                    {slot.style === 'north' && (
+                                      <NorthIndianChart data={vchartData} modes={chartModes} showDegrees={true} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
+                                    )}
+                                    {slot.style === 'south' && (
+                                      <SouthIndianChart data={vchartData} modes={chartModes} showDegrees={true} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
+                                    )}
+                                    {slot.style === 'chakra' && (
+                                      <VedicChakraChart data={vchartData} modes={chartModes} showDegrees={true} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
+                                    )}
+                                  </div>
+
+                                  {/* Focus target info */}
+                                  <div className="bg-indigo-50/50 p-2 rounded-xl border border-indigo-100/50 text-[10px] text-indigo-900 leading-tight">
+                                    <span className="font-extrabold text-indigo-700 block mb-0.5">析：</span>
+                                    {VARGA_FOCUS[slot.vargaId]}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Side-by-side components: Graha Table + Vimshottari Dasha */}
+                          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 bg-slate-50 p-5 rounded-3xl border border-slate-200">
+                            {/* Graha Info (8 columns) */}
+                            <div className="xl:col-span-8 bg-white p-4 rounded-2xl border border-slate-200 overflow-x-auto">
+                              <h3 className="font-extrabold text-sm text-slate-800 mb-3 flex items-center gap-1.5">
+                                <span className="w-1.5 h-3 bg-indigo-600 rounded-sm"></span>
+                                星曜及宮位詳細經緯度 (Graha Longitudes)
+                              </h3>
+                              <table className="min-w-full text-xs font-mono text-slate-700">
+                                <thead>
+                                  <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
+                                    <th className="px-3 py-2 text-left">星體 (Graha)</th>
+                                    <th className="px-3 py-2 text-left">吉凶 (Dignity)</th>
+                                    <th className="px-3 py-2 text-left">黃經 (Longitude)</th>
+                                    <th className="px-3 py-2 text-left">星座 (Sign)</th>
+                                    <th className="px-3 py-2 text-left">落宮 (House)</th>
+                                    <th className="px-3 py-2 text-left">星宿 (Nakshatra)</th>
+                                    <th className="px-3 py-2 text-right">狀態</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {/* Lagna */}
+                                  <tr className="hover:bg-slate-50 transition-colors font-bold text-slate-950">
+                                    <td className="px-3 py-2 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
+                                      命宮 (Lagna)
+                                    </td>
+                                    <td className="px-3 py-2 text-indigo-600">Ascendant</td>
+                                    <td className="px-3 py-2">{chartData.ascendant.toFixed(2)}°</td>
+                                    <td className="px-3 py-2">{getZodiacName(chartData.ascendantSign, chartModes)}</td>
+                                    <td className="px-3 py-2">1 宮</td>
+                                    <td className="px-3 py-2">-</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600">正行 (D)</td>
+                                  </tr>
+                                  {Object.values(chartData.planets).map((p: any) => (
+                                    <tr 
+                                      key={p.name} 
+                                      onClick={() => setSelectedPlanet(p.name)}
+                                      className={`hover:bg-indigo-50 transition-colors cursor-pointer ${selectedPlanet === p.name ? 'bg-indigo-50/70 font-bold' : ''}`}
+                                    >
+                                      <td className="px-3 py-2 flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
+                                        {getPlanetName(p.name, chartModes)}
+                                      </td>
+                                      <td className="px-3 py-2 font-medium text-pink-600">
+                                        {p.dignity}
+                                      </td>
+                                      <td className="px-3 py-2">{p.degreeInSign.toFixed(2)}°</td>
+                                      <td className="px-3 py-2">{getZodiacName(p.sign, chartModes)}</td>
+                                      <td className="px-3 py-2">{p.house} 宮</td>
+                                      <td className="px-3 py-2 text-slate-500">
+                                        {p.nakshatra.name} ({p.nakshatra.pada}足)
+                                      </td>
+                                      <td className="px-3 py-2 text-right">
+                                        {p.isRetrograde ? (
+                                          <span className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded text-[10px] font-bold">逆行 (R)</span>
+                                        ) : (
+                                          <span className="bg-green-50 text-green-600 px-1.5 py-0.5 rounded text-[10px] font-bold">正行 (D)</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
-                            <div className="space-y-4 xl:col-span-2 h-full">
-                              <ChartDetailsPanel data={chartData} />
+
+                            {/* Vimshottari Dasha (4 columns) */}
+                            <div className="xl:col-span-4 bg-white p-4 rounded-2xl border border-slate-200 flex flex-col h-full min-h-[350px]">
+                              <h3 className="font-extrabold text-sm text-slate-800 mb-2 flex items-center gap-1.5">
+                                <span className="w-1.5 h-3 bg-pink-500 rounded-sm"></span>
+                                Vimshottari 流年大運
+                              </h3>
+                              <p className="text-[10px] text-slate-400 mb-3">
+                                即時觀察當前持令星大限，精確至子限時間軸。
+                              </p>
+                              <div className="flex-1 overflow-y-auto max-h-[380px] pr-1 space-y-1.5 custom-scrollbar text-xs">
+                                {chartData.dashas?.map((d: any) => {
+                                  const isCurrent = new Date() >= new Date(d.start) && new Date() <= new Date(d.end);
+                                  return (
+                                    <div 
+                                      key={d.planet} 
+                                      className={`p-2.5 rounded-xl border transition-all ${
+                                        isCurrent 
+                                          ? 'bg-indigo-50/70 border-indigo-200 ring-1 ring-indigo-200' 
+                                          : 'bg-slate-50/40 border-slate-100 hover:border-slate-300'
+                                      }`}
+                                    >
+                                      <div className="flex justify-between items-center font-bold">
+                                        <span className="text-slate-800 flex items-center gap-1">
+                                          {isCurrent && <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-ping"></span>}
+                                          {getPlanetName(d.planet, chartModes)} 大運
+                                        </span>
+                                        <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-extrabold">
+                                          Level 1
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 mt-1 font-mono">
+                                        {new Date(d.start).toLocaleDateString('zh-TW')} ~ {new Date(d.end).toLocaleDateString('zh-TW')}
+                                      </div>
+                                      
+                                      {/* Subperiods */}
+                                      {isCurrent && d.subPeriods && (
+                                        <div className="mt-2 pl-2 border-l-2 border-indigo-200 space-y-1 bg-white/70 p-1.5 rounded">
+                                          <p className="text-[9px] font-bold text-indigo-500 uppercase">當前子運 (Bhukti):</p>
+                                          {d.subPeriods.slice(0, 5).map((sub: any) => {
+                                            const isSubCurrent = new Date() >= new Date(sub.start) && new Date() <= new Date(sub.end);
+                                            return (
+                                              <div key={sub.planet} className={`text-[10px] flex justify-between ${isSubCurrent ? 'font-bold text-indigo-700' : 'text-slate-500'}`}>
+                                                <span>- {getPlanetName(sub.planet, chartModes)} 運</span>
+                                                <span className="text-[9px] font-mono">
+                                                  {new Date(sub.start).toLocaleDateString('zh-TW').split('/')[0]}
+                                                </span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="space-y-4">
-                              <h3 className="text-center font-semibold text-gray-800">南印度盤 (D1)</h3>
-                              <SouthIndianChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
-                            </div>
-                            <div className="space-y-4">
-                              <h3 className="text-center font-semibold text-gray-800">北印度盤 (D1)</h3>
-                              <NorthIndianChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
-                            </div>
-                            <div className="space-y-4">
-                              <h3 className="text-center font-semibold text-gray-800">西洋盤 (Western)</h3>
-                              <WesternChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} />
-                            </div>
-                          </>
-                        )}
-                      </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`grid grid-cols-1 ${isProView ? 'xl:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-3'} gap-8`}>
+                          {isProView ? (
+                            <>
+                              <div className="space-y-4 xl:col-span-1">
+                                <h3 className="text-center font-semibold text-gray-800">南印度盤 (D1)</h3>
+                                <SouthIndianChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
+                              </div>
+                              <div className="space-y-4 xl:col-span-2 h-full">
+                                <ChartDetailsPanel data={chartData} />
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="space-y-4">
+                                <h3 className="text-center font-semibold text-gray-800">南印度盤 (D1)</h3>
+                                <SouthIndianChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
+                              </div>
+                              <div className="space-y-4">
+                                <h3 className="text-center font-semibold text-gray-800">北印度盤 (D1)</h3>
+                                <NorthIndianChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} referenceSign={referenceSignMode === 'aries' ? 1 : undefined} />
+                              </div>
+                              <div className="space-y-4">
+                                <h3 className="text-center font-semibold text-gray-800">西洋盤 (Western)</h3>
+                                <WesternChart data={chartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -952,9 +1586,16 @@ export default function App() {
                 {activeTab === 'arudha' && chartData && <TabArudhaPadas data={chartData} modes={chartModes} />}
                 {activeTab === 'relations' && chartData && <TabRelations data={chartData} modes={chartModes} />}
                 {activeTab === 'shadbala' && chartData && <TabShadbala data={chartData} modes={chartModes} />}
-                {activeTab === 'misc' && chartData && <TabMisc data={chartData} modes={chartModes} />}
+                {activeTab === 'misc' && chartData && <TabMisc data={chartData} transitData={transitData} modes={chartModes} />}
                 {activeTab === 'rules' && <RulesReference />}
-                {activeTab === 'reports' && chartData && <TabReportPrompts data={chartData} />}
+                {activeTab === 'reports' && chartData && (
+                  <TabReportPrompts 
+                    data={chartData} 
+                    userName={name} 
+                    birthDate={date}
+                    birthTime={time}
+                  />
+                )}
 
                 {/* Varga Charts */}
                 {activeTab === 'vargas' && chartData && (
@@ -979,6 +1620,12 @@ export default function App() {
                           className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${vargaMode === 'south' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                         >
                           南印度盤
+                        </button>
+                        <button
+                          onClick={() => setVargaMode('circular')}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${vargaMode === 'circular' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                          圓形盤
                         </button>
                       </div>
                     </div>
@@ -1098,10 +1745,16 @@ export default function App() {
                                 <NorthIndianChart data={vargaChartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} />
                               </div>
                             )}
+                            {vargaMode === 'circular' && (
+                              <div className="space-y-4">
+                                <h3 className="text-center font-bold text-gray-600 text-sm">圓形盤 (Vedic Wheel)</h3>
+                                <CircularVedicChart data={vargaChartData} modes={chartModes} showDegrees={isProView} selectedPlanet={selectedPlanet} onPlanetClick={(p) => setShowPlanetPopup(p)} />
+                              </div>
+                            )}
                             {vargaMode === 'grid' && (
-                              <div className="col-span-full space-y-4">
+                              <div className="space-y-4">
                                 <h3 className="text-center font-bold text-gray-600 text-sm">網格視圖</h3>
-                                <div className="grid grid-cols-4 gap-1 text-xs">
+                                <div className="grid grid-cols-3 gap-1.5 text-xs">
                                   {Array.from({ length: 12 }).map((_, i) => {
                                     const sign = i + 1;
                                     const planetsInSign = Object.entries(vargaChartData.planets)
@@ -1121,6 +1774,17 @@ export default function App() {
                                 </div>
                               </div>
                             )}
+                            
+                            {/* Explanation Panel Column */}
+                            <div className={vargaMode === 'grid' ? 'col-span-full' : ''}>
+                              <VargaExplanationPanel
+                                vargaId={vargaId}
+                                vargaName={vargaConfig.name}
+                                vargaData={vargaChartData}
+                                d1Data={chartData}
+                                modes={chartModes}
+                              />
+                            </div>
                           </div>
                         </div>
                       );
@@ -1658,8 +2322,38 @@ export default function App() {
                     />
                   </div>
                 )}
-                {activeTab === 'medical' && (
-                  <MedicalReport natalData={chartData} transitData={transitData} modes={chartModes} />
+                {activeTab === 'solar-return' && chartData && (
+                  <div className="space-y-8 max-w-5xl mx-auto">
+                    <SolarReturnTab
+                      natalData={chartData}
+                      modes={chartModes}
+                      lat={parseFloat(lat)}
+                      lng={parseFloat(lng)}
+                      isSidereal={isSidereal}
+                      ayanamsaType={ayanamsaType}
+                    />
+                  </div>
+                )}
+                {activeTab === 'synastry' && chartData && (
+                  <div className="space-y-8 max-w-5xl mx-auto">
+                    <SynastryCompatibilityTab
+                      natalData={chartData}
+                      savedCharts={savedCharts}
+                      isSidereal={isSidereal}
+                      ayanamsaType={ayanamsaType}
+                      chartModes={chartModes}
+                    />
+                  </div>
+                )}
+                {activeTab === 'medical' && chartData && (
+                  <MedicalReport 
+                    natalData={chartData} 
+                    transitData={transitData} 
+                    modes={chartModes} 
+                    userName={name}
+                    birthDate={date}
+                    birthTime={time}
+                  />
                 )}
                 {activeTab === 'gochar' && chartData && transitData && (
                   <GocharaReport natalData={chartData} transitData={transitData} modes={chartModes} />
@@ -1672,6 +2366,17 @@ export default function App() {
                     natalData={chartData} 
                     transitData={transitData || undefined} 
                     modes={chartModes}
+                    isSidereal={isSidereal}
+                    ayanamsaType={ayanamsaType}
+                    birthDate={new Date(`${date}T${time}:00`)}
+                  />
+                )}
+                {activeTab === 'almuten-tools' && chartData && (
+                  <AlmutenToolsTab
+                    natalData={chartData}
+                    modes={chartModes}
+                    lat={parseFloat(lat)}
+                    lng={parseFloat(lng)}
                     isSidereal={isSidereal}
                     ayanamsaType={ayanamsaType}
                   />

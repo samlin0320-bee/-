@@ -26,12 +26,29 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "name", "birthData", "createdAt"]
+    },
+    "SavedReport": {
+      "title": "Saved Report",
+      "description": "An AI generated report saved by the user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user who owns the report." },
+        "userName": { "type": "string", "description": "The name of the individual the report belongs to." },
+        "reportTitle": { "type": "string", "description": "The title of the report." },
+        "reportText": { "type": "string", "description": "The full text content of the report." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "reportTitle", "reportText", "createdAt"]
     }
   },
   "firestore": {
     "/charts/{chartId}": {
       "schema": "SavedChart",
       "description": "Collection of saved astrology charts."
+    },
+    "/reports/{reportId}": {
+      "schema": "SavedReport",
+      "description": "Collection of saved AI astrology and medical reports."
     }
   }
 }

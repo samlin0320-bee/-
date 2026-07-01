@@ -1,4 +1,4 @@
-import { Body, AstroTime, GeoVector, GeoMoon, SunPosition, Ecliptic, SiderealTime } from 'astronomy-engine';
+import { Body, AstroTime, GeoVector, GeoMoon, SunPosition, Ecliptic, SiderealTime, Rotation_EQJ_EQD, Rotation_EQD_ECL, RotateVector } from 'astronomy-engine';
 
 export interface NakshatraInfo {
   name: string;
@@ -6,6 +6,8 @@ export interface NakshatraInfo {
   lord: string;
   degree: number;
 }
+
+import { calculateChart as calculateCelestineChart, Planet as CelestinePlanet } from 'celestine';
 
 export interface PlanetPosition {
   name: string;
@@ -21,7 +23,9 @@ export interface PlanetPosition {
   friendship: 'Great Friend' | 'Friend' | 'Neutral' | 'Enemy' | 'Great Enemy';
   avastha: 'Infant' | 'Youth' | 'Adult' | 'Old' | 'Dead';
   jaiminiKaraka?: string;
+  celestineDignity?: any;
 }
+
 
 export interface DashaPeriod {
   planet: string;
@@ -85,6 +89,31 @@ export interface ChartData {
     house: number;
     nakshatra: NakshatraInfo;
     lord: string;
+  };
+  horaLagna?: {
+    longitude: number;
+    sign: number;
+    degreeInSign: number;
+    house: number;
+  };
+  ghatiLagna?: {
+    longitude: number;
+    sign: number;
+    degreeInSign: number;
+    house: number;
+  };
+  sreeLagna?: {
+    longitude: number;
+    sign: number;
+    degreeInSign: number;
+    house: number;
+  };
+  sunriseTime?: string;
+  sunriseDegree?: {
+    longitude: number;
+    sign: number;
+    degreeInSign: number;
+    nakshatra: NakshatraInfo;
   };
 }
 
@@ -152,7 +181,7 @@ const getNakshatra = (longitude: number): NakshatraInfo => {
   };
 };
 
-const getAyanamsa = (date: Date, type: string = 'Lahiri') => {
+export const getAyanamsa = (date: Date, type: string = 'Lahiri') => {
   const year = date.getUTCFullYear() + date.getUTCMonth() / 12 + date.getUTCDate() / 365.25;
   
   // Base values at J2000.0
@@ -232,7 +261,6 @@ export const getGeocentricLongitude = (body: Body, time: AstroTime): number => {
 };
 
 // We need to import these functions from astronomy-engine. Let's make sure they are injected.
-import { Rotation_EQJ_EQD, Rotation_EQD_ECL, RotateVector } from 'astronomy-engine';
 
 const rotation_EQJ_EQD = Rotation_EQJ_EQD;
 const rotation_EQD_ECL = Rotation_EQD_ECL;
@@ -906,6 +934,132 @@ export const calculateChart = (date: Date, lat: number, lng: number, isSidereal:
     avastha: getAvastha(ketuLon % 30, Math.floor(ketuLon / 30) + 1)
   };
 
+  try {
+    const dUTC = new Date(date.toISOString());
+    const celChart = calculateCelestineChart({
+      year: dUTC.getUTCFullYear(),
+      month: dUTC.getUTCMonth() + 1,
+      day: dUTC.getUTCDate(),
+      hour: dUTC.getUTCHours(),
+      minute: dUTC.getUTCMinutes(),
+      second: dUTC.getUTCSeconds(),
+      latitude: lat,
+      longitude: lng,
+      timezone: 0
+    }, { includeAsteroids: true, includeLots: true });
+    
+    ['Chiron', 'Ceres', 'Pallas', 'Juno', 'Vesta'].forEach(ast => {
+      const astData = celChart.planets.find(p => p.name === ast);
+      if (astData) {
+        let lon = astData.longitude;
+        if (isSidereal) {
+          lon -= ayanamsa;
+          if (lon < 0) lon += 360;
+        }
+        planets[ast] = {
+          name: ast,
+          longitude: lon,
+          sign: Math.floor(lon / 30) + 1,
+          degreeInSign: lon % 30,
+          isRetrograde: astData.isRetrograde || false,
+          nakshatra: getNakshatra(lon),
+          house: ((Math.floor(lon / 30) + 1 - ascendantSign + 12) % 12) + 1,
+          speed: astData.longitudeSpeed || 0,
+          isCombust: false,
+          dignity: 'Neutral',
+          friendship: 'Neutral',
+          avastha: getAvastha(lon % 30, Math.floor(lon / 30) + 1)
+        };
+      }
+    });
+
+    // Fortuna & Spirit
+    const fortuna = celChart.lots.find(l => l.name === 'Part of Fortune');
+    if (fortuna) {
+      let lon = fortuna.longitude;
+      if (isSidereal) {
+        lon -= ayanamsa;
+        if (lon < 0) lon += 360;
+      }
+      planets['Fortune'] = {
+        name: 'Fortune',
+        longitude: lon,
+        sign: Math.floor(lon / 30) + 1,
+        degreeInSign: lon % 30,
+        isRetrograde: false,
+        nakshatra: getNakshatra(lon),
+        house: ((Math.floor(lon / 30) + 1 - ascendantSign + 12) % 12) + 1,
+        speed: 0,
+        isCombust: false,
+        dignity: 'Neutral',
+        friendship: 'Neutral',
+        avastha: getAvastha(lon % 30, Math.floor(lon / 30) + 1)
+      };
+    }
+
+    const spirit = celChart.lots.find(l => l.name === 'Part of Spirit');
+    if (spirit) {
+      let lon = spirit.longitude;
+      if (isSidereal) {
+        lon -= ayanamsa;
+        if (lon < 0) lon += 360;
+      }
+      planets['Spirit'] = {
+        name: 'Spirit',
+        longitude: lon,
+        sign: Math.floor(lon / 30) + 1,
+        degreeInSign: lon % 30,
+        isRetrograde: false,
+        nakshatra: getNakshatra(lon),
+        house: ((Math.floor(lon / 30) + 1 - ascendantSign + 12) % 12) + 1,
+        speed: 0,
+        isCombust: false,
+        dignity: 'Neutral',
+        friendship: 'Neutral',
+        avastha: getAvastha(lon % 30, Math.floor(lon / 30) + 1)
+      };
+    }
+  } catch (e) {
+    console.warn("Failed to calculate Celestine points", e);
+  }
+
+  // Vertex Calculation
+  try {
+    const gmstHours = SiderealTime(time);
+    const lstHours = (gmstHours + lng / 15.0) % 24.0;
+    const lstDegrees = lstHours * 15.0;
+    const ramc = lstDegrees * (Math.PI / 180);
+    const eps = OBLIQUITY * (Math.PI / 180);
+    const latRad = lat * (Math.PI / 180);
+
+    const yVx = Math.cos(ramc + Math.PI) * Math.sin(latRad);
+    const xVx = -Math.sin(ramc + Math.PI) * Math.cos(eps) * Math.sin(latRad) - Math.cos(latRad) * Math.sin(eps);
+    let vxDeg = Math.atan2(yVx, xVx) * (180 / Math.PI);
+    if (vxDeg < 0) vxDeg += 360;
+    
+    if (isSidereal) {
+      vxDeg -= ayanamsa;
+      if (vxDeg < 0) vxDeg += 360;
+    }
+    
+    planets['Vertex'] = {
+      name: 'Vertex',
+      longitude: vxDeg,
+      sign: Math.floor(vxDeg / 30) + 1,
+      degreeInSign: vxDeg % 30,
+      isRetrograde: false,
+      nakshatra: getNakshatra(vxDeg),
+      house: ((Math.floor(vxDeg / 30) + 1 - ascendantSign + 12) % 12) + 1,
+      speed: 0,
+      isCombust: false,
+      dignity: 'Neutral',
+      friendship: 'Neutral',
+      avastha: getAvastha(vxDeg % 30, Math.floor(vxDeg / 30) + 1)
+    };
+  } catch (e) {
+    console.warn("Failed to calculate Vertex", e);
+  }
+
   // Calculate Compound Friendship
   Object.keys(planets).forEach(key => {
     if (key !== 'Rahu' && key !== 'Ketu' && !['Uranus', 'Neptune', 'Pluto'].includes(key)) {
@@ -1087,6 +1241,74 @@ export const calculateChart = (date: Date, lat: number, lng: number, isSidereal:
     lord: bbLord
   };
 
+  // Astronomical approximation of local Sunrise
+  const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
+  const phi = lat * Math.PI / 180;
+  const declination = 23.45 * Math.sin((360 / 365) * (dayOfYear - 80) * Math.PI / 180) * Math.PI / 180;
+  const cosH = -Math.tan(phi) * Math.tan(declination);
+  let H_val = 6.0; // default 6:00 AM
+  if (cosH >= -1 && cosH <= 1) {
+    H_val = Math.acos(cosH) * 180 / Math.PI / 15;
+  }
+  let sunriseHours = 12.0 - H_val;
+  if (sunriseHours < 4.5 || sunriseHours > 7.5 || isNaN(sunriseHours)) {
+    sunriseHours = 6.0; // fallback to standard 6:00 AM
+  }
+
+  const srHour = Math.floor(sunriseHours);
+  const srMin = Math.floor((sunriseHours - srHour) * 60);
+  const srSec = Math.floor(((sunriseHours - srHour) * 60 - srMin) * 60);
+  const sunriseTimeStr = `${srHour.toString().padStart(2, '0')}:${srMin.toString().padStart(2, '0')}:${srSec.toString().padStart(2, '0')}`;
+
+  const birthTimeHours = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+  let elapsedHours = birthTimeHours - sunriseHours;
+  if (elapsedHours < 0) {
+    elapsedHours += 24; // Born before sunrise, count from previous day's sunrise
+  }
+
+  const sunriseSunLon = (planets['Sun'].longitude + (sunriseHours - birthTimeHours) * (0.9856 / 24) + 360) % 360;
+  const sRiseSign = Math.floor(sunriseSunLon / 30) + 1;
+  const sRiseDeg = sunriseSunLon % 30;
+  const sRiseNak = getNakshatra(sunriseSunLon);
+
+  const sunriseDegree = {
+    longitude: sunriseSunLon,
+    sign: sRiseSign,
+    degreeInSign: sRiseDeg,
+    nakshatra: sRiseNak
+  };
+
+  // Hora Lagna (HL): 30 degrees per hour since sunrise, added to Sun's longitude
+  const hlLon = (planets['Sun'].longitude + elapsedHours * 30) % 360;
+  const hlSign = Math.floor(hlLon / 30) + 1;
+  const horaLagna = {
+    longitude: hlLon,
+    sign: hlSign,
+    degreeInSign: hlLon % 30,
+    house: ((hlSign - ascendantSign + 12) % 12) + 1
+  };
+
+  // Ghati Lagna (GL): 75 degrees per hour since sunrise (30 degrees per 24 mins), added to Sun's longitude
+  const glLon = (planets['Sun'].longitude + elapsedHours * 75) % 360;
+  const glSign = Math.floor(glLon / 30) + 1;
+  const ghatiLagna = {
+    longitude: glLon,
+    sign: glSign,
+    degreeInSign: glLon % 30,
+    house: ((glSign - ascendantSign + 12) % 12) + 1
+  };
+
+  // Sree Lagna (SL): Lagna + (elapsed fraction of Moon's Nakshatra) * 360 degrees
+  const moonNakFraction = (planets['Moon'].longitude % (360 / 27)) / (360 / 27);
+  const slLon = (ascendant + moonNakFraction * 360) % 360;
+  const slSign = Math.floor(slLon / 30) + 1;
+  const sreeLagna = {
+    longitude: slLon,
+    sign: slSign,
+    degreeInSign: slLon % 30,
+    house: ((slSign - ascendantSign + 12) % 12) + 1
+  };
+
   return {
     ascendant,
     ascendantSign,
@@ -1105,7 +1327,12 @@ export const calculateChart = (date: Date, lat: number, lng: number, isSidereal:
     utcTime: date.toISOString(),
     arudhaLagna,
     upapadaLagna,
-    bhriguBindu
+    bhriguBindu,
+    horaLagna,
+    ghatiLagna,
+    sreeLagna,
+    sunriseTime: sunriseTimeStr,
+    sunriseDegree
   };
 };
 
@@ -1446,22 +1673,30 @@ export const getPlanetName = (name: string, modes: string[] = ['zh']) => {
   const zh: Record<string, string> = {
     Sun: '太陽', Moon: '太陰', Mars: '火星', Mercury: '水星', Jupiter: '木星',
     Venus: '金星', Saturn: '土星', Rahu: '羅睺', Ketu: '計都', Ascendant: '命宮',
-    Uranus: '天王星', Neptune: '海王星', Pluto: '冥王星'
+    Uranus: '天王星', Neptune: '海王星', Pluto: '冥王星',
+    Fortune: '福點', Spirit: '精神點', Vertex: '宿命點',
+    Chiron: '凱隆星', Ceres: '穀神星', Pallas: '智神星', Juno: '婚神星', Vesta: '灶神星'
   };
   const en: Record<string, string> = {
     Sun: 'Sun', Moon: 'Moon', Mars: 'Mars', Mercury: 'Mercury', Jupiter: 'Jupiter',
     Venus: 'Venus', Saturn: 'Saturn', Rahu: 'Rahu', Ketu: 'Ketu', Ascendant: 'Asc',
-    Uranus: 'Uranus', Neptune: 'Neptune', Pluto: 'Pluto'
+    Uranus: 'Uranus', Neptune: 'Neptune', Pluto: 'Pluto',
+    Fortune: 'PoF', Spirit: 'PoS', Vertex: 'Vertex',
+    Chiron: 'Chiron', Ceres: 'Ceres', Pallas: 'Pallas', Juno: 'Juno', Vesta: 'Vesta'
   };
   const enAbbr: Record<string, string> = {
     Sun: 'Su', Moon: 'Mo', Mars: 'Ma', Mercury: 'Me', Jupiter: 'Ju',
     Venus: 'Ve', Saturn: 'Sa', Rahu: 'Ra', Ketu: 'Ke', Ascendant: 'As',
-    Uranus: 'Ur', Neptune: 'Ne', Pluto: 'Pl'
+    Uranus: 'Ur', Neptune: 'Ne', Pluto: 'Pl',
+    Fortune: 'PoF', Spirit: 'PoS', Vertex: 'Vx',
+    Chiron: 'Ch', Ceres: 'Ce', Pallas: 'Pa', Juno: 'Ju', Vesta: 'Ve'
   };
   const sanskrit: Record<string, string> = {
     Sun: 'Surya', Moon: 'Chandra', Mars: 'Mangala', Mercury: 'Budha', Jupiter: 'Guru',
     Venus: 'Shukra', Saturn: 'Sani', Rahu: 'Rahu', Ketu: 'Ketu', Ascendant: 'Lagna',
-    Uranus: 'Uranus', Neptune: 'Neptune', Pluto: 'Pluto'
+    Uranus: 'Uranus', Neptune: 'Neptune', Pluto: 'Pluto',
+    Fortune: 'Fortuna', Spirit: 'Spirit', Vertex: 'Vertex',
+    Chiron: 'Chiron', Ceres: 'Ceres', Pallas: 'Pallas', Juno: 'Juno', Vesta: 'Vesta'
   };
   const sansAbbr: Record<string, string> = {
     Sun: 'Sur', Moon: 'Cha', Mars: 'Man', Mercury: 'Bud', Jupiter: 'Gur',
@@ -1500,3 +1735,270 @@ export const getElementColor = (sign: number) => {
   }
 };
 
+export interface TransitPeriod {
+  planet: string;
+  sign: number;
+  start: Date;
+  end: Date;
+}
+
+export const findTransitPeriods = (
+  planetName: string,
+  targetSigns: number[],
+  startDate: Date,
+  yearsToSearch: number,
+  isSidereal: boolean,
+  ayanamsaType: string
+): TransitPeriod[] => {
+  const result: TransitPeriod[] = [];
+  const startMs = startDate.getTime();
+  const endMs = startMs + yearsToSearch * 365 * 24 * 60 * 60 * 1000;
+  
+  // Custom step sizes based on planet speed
+  let stepDays = 15;
+  if (planetName === 'Mars') {
+    stepDays = 4;
+  } else if (planetName === 'Sun' || planetName === 'Mercury' || planetName === 'Venus' || planetName === 'Moon') {
+    stepDays = 2;
+  } else if (planetName === 'Neptune' || planetName === 'Pluto' || planetName === 'Uranus') {
+    stepDays = 30;
+  }
+
+  const stepMs = stepDays * 24 * 60 * 60 * 1000;
+
+  const getLonAtTime = (ms: number): number => {
+    const d = new Date(ms);
+    const time = new AstroTime(d);
+    let lon = 0;
+    
+    if (planetName === 'Rahu' || planetName === 'Ketu') {
+      const dt = time.tt;
+      let rahuLon = (125.04452 - 0.0529537648 * dt) % 360;
+      if (rahuLon < 0) rahuLon += 360;
+      if (planetName === 'Ketu') {
+        rahuLon = (rahuLon + 180) % 360;
+      }
+      lon = rahuLon;
+    } else {
+      let body: Body;
+      switch (planetName) {
+        case 'Sun': body = Body.Sun; break;
+        case 'Moon': body = Body.Moon; break;
+        case 'Mars': body = Body.Mars; break;
+        case 'Mercury': body = Body.Mercury; break;
+        case 'Jupiter': body = Body.Jupiter; break;
+        case 'Venus': body = Body.Venus; break;
+        case 'Saturn': body = Body.Saturn; break;
+        case 'Uranus': body = Body.Uranus; break;
+        case 'Neptune': body = Body.Neptune; break;
+        case 'Pluto': body = Body.Pluto; break;
+        default: return 0;
+      }
+      lon = getGeocentricLongitude(body, time);
+    }
+    
+    if (isSidereal) {
+      const ayanamsa = getAyanamsa(d, ayanamsaType);
+      lon -= ayanamsa;
+      if (lon < 0) lon += 360;
+    }
+    return lon;
+  };
+
+  let searchMs = startMs;
+  let prevInsideSign: number | null = null;
+  let activePeriodStartMs: number | null = null;
+  let activeSign: number | null = null;
+
+  while (searchMs < endMs) {
+    const lon = getLonAtTime(searchMs);
+    const sign = Math.floor(lon / 30) + 1;
+    
+    const isTarget = targetSigns.includes(sign);
+    
+    if (isTarget) {
+      if (activeSign === null || activeSign !== sign) {
+        // If we entered a target sign, refine the transition boundary
+        let transitionMs = searchMs;
+        if (prevInsideSign !== sign && prevInsideSign !== null) {
+          let low = searchMs - stepMs;
+          let high = searchMs;
+          for (let b = 0; b < 6; b++) {
+            const mid = (low + high) / 2;
+            const midLon = getLonAtTime(mid);
+            const midSign = Math.floor(midLon / 30) + 1;
+            if (midSign === sign) {
+              high = mid;
+            } else {
+              low = mid;
+            }
+          }
+          transitionMs = high;
+        }
+        
+        if (activePeriodStartMs !== null && activeSign !== null) {
+          result.push({
+            planet: planetName,
+            sign: activeSign,
+            start: new Date(activePeriodStartMs),
+            end: new Date(transitionMs)
+          });
+        }
+        
+        activePeriodStartMs = transitionMs;
+        activeSign = sign;
+      }
+    } else {
+      if (activePeriodStartMs !== null && activeSign !== null) {
+        let transitionMs = searchMs;
+        let low = searchMs - stepMs;
+        let high = searchMs;
+        for (let b = 0; b < 6; b++) {
+          const mid = (low + high) / 2;
+          const midLon = getLonAtTime(mid);
+          const midSign = Math.floor(midLon / 30) + 1;
+          if (midSign === activeSign) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+        transitionMs = low;
+        
+        result.push({
+          planet: planetName,
+          sign: activeSign,
+          start: new Date(activePeriodStartMs),
+          end: new Date(transitionMs)
+        });
+        
+        activePeriodStartMs = null;
+        activeSign = null;
+      }
+    }
+    
+    prevInsideSign = sign;
+    searchMs += stepMs;
+  }
+
+  if (activePeriodStartMs !== null && activeSign !== null) {
+    result.push({
+      planet: planetName,
+      sign: activeSign,
+      start: new Date(activePeriodStartMs),
+      end: new Date(endMs)
+    });
+  }
+
+  return result;
+};
+
+export interface SadeSatiPeriod {
+  startDate: Date;
+  endDate: Date;
+  phase: number;
+  sign: number;
+}
+
+export const calculateSadeSatiPeriods = (
+  birthDate: Date,
+  natalMoonSign: number,
+  isSidereal: boolean = true,
+  ayanamsaType: string = 'Lahiri'
+): SadeSatiPeriod[] => {
+  const periods: SadeSatiPeriod[] = [];
+  
+  const sign12 = natalMoonSign === 1 ? 12 : natalMoonSign - 1;
+  const sign1 = natalMoonSign;
+  const sign2 = natalMoonSign === 12 ? 1 : natalMoonSign + 1;
+  
+  const targetSigns = [sign12, sign1, sign2];
+
+  let currentMs = birthDate.getTime();
+  const endMs = currentMs + 100 * 365.25 * 24 * 3600 * 1000; // 100 years
+  
+  const stepMs = 5 * 24 * 3600 * 1000; // 5 days
+  
+  let activePeriodStartMs: number | null = null;
+  let activePhase: number | null = null;
+  let activeSign: number | null = null;
+
+  const getSaturnSign = (timeMs: number): number => {
+    const d = new Date(timeMs);
+    const time = new AstroTime(d);
+    let lon = getGeocentricLongitude(Body.Saturn, time);
+    if (isSidereal) {
+      lon -= getAyanamsa(d, ayanamsaType);
+    }
+    if (lon < 0) lon += 360;
+    if (lon >= 360) lon -= 360;
+    return Math.floor(lon / 30) + 1;
+  };
+
+  let prevSign = getSaturnSign(currentMs);
+  
+  // Initialize if already in Sade Sati at birth
+  const initialPhaseIdx = targetSigns.indexOf(prevSign);
+  if (initialPhaseIdx !== -1) {
+    activePeriodStartMs = currentMs;
+    activePhase = initialPhaseIdx + 1;
+    activeSign = prevSign;
+  }
+
+  currentMs += stepMs;
+
+  while (currentMs <= endMs) {
+    const sign = getSaturnSign(currentMs);
+    
+    if (sign !== prevSign) {
+      let lowMs = currentMs - stepMs;
+      let highMs = currentMs;
+      let transitionMs = currentMs;
+      
+      for (let i = 0; i < 6; i++) {
+        const midMs = (lowMs + highMs) / 2;
+        const midSign = getSaturnSign(midMs);
+        if (midSign === prevSign) {
+          lowMs = midMs;
+        } else {
+          highMs = midMs;
+        }
+      }
+      transitionMs = Math.round((lowMs + highMs) / 2);
+      
+      const phaseIdx = targetSigns.indexOf(sign);
+      
+      if (activePeriodStartMs !== null && activeSign !== null && activePhase !== null) {
+        periods.push({
+          startDate: new Date(activePeriodStartMs),
+          endDate: new Date(transitionMs),
+          phase: activePhase,
+          sign: activeSign
+        });
+        activePeriodStartMs = null;
+        activePhase = null;
+        activeSign = null;
+      }
+      
+      if (phaseIdx !== -1) {
+        activePeriodStartMs = transitionMs;
+        activePhase = phaseIdx + 1;
+        activeSign = sign;
+      }
+    }
+    
+    prevSign = sign;
+    currentMs += stepMs;
+  }
+  
+  if (activePeriodStartMs !== null && activeSign !== null && activePhase !== null) {
+    periods.push({
+      startDate: new Date(activePeriodStartMs),
+      endDate: new Date(endMs),
+      phase: activePhase,
+      sign: activeSign
+    });
+  }
+
+  return periods;
+};
