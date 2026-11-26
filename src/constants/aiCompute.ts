@@ -161,16 +161,16 @@ export const DEFAULT_PROVIDERS: AIProviderPlan[] = [
     name: 'Proactor AI Pro',
     vendor: 'Proactor',
     plan: 'Pro',
-    billingUSD: 20,
+    billingUSD: 19.99, // 官方月繳價；年繳約 $15.99/月，依你實際方案調整
     accounts: 1,
     enabled: true,
-    models: ['(待確認)'],
-    capability: { agent: 4, chat: 3, writing: 3, research: 3 },
-    link: '',
-    estimated: true,
-    notes: '⚠️ 查無可靠公開規格：以下為佔位值，請依你帳號後台的實際額度、模型與費用修改後再納入調配。',
+    models: ['Proactive AI Advice'],
+    capability: { writing: 3, research: 3, agent: 3, chat: 2, data: 2 },
+    link: 'https://proactor.ai/features/',
+    notes: '會議 AI 助理（轉錄＋即時建議）：官方 Pro 每月 1,350 轉錄分鐘 + 3,400 AI 額度，月繳 $19.99（年繳約 $15.99/月）。屬會議場景專用，能力分偏中，不與寫程式/影像類正面競爭。資料來源 proactor.ai（2026-11-26）。',
     quotas: [
-      { id: 'proactor-credits', label: '通用額度（佔位，待確認）', taskTypes: ['agent', 'chat', 'writing', 'research'], limit: 500, period: 'month', unit: 'credits', estimated: true, note: '佔位值，請自行修正' },
+      { id: 'proactor-minutes', label: '會議轉錄時長', taskTypes: ['writing'], limit: 1350, period: 'month', unit: 'minutes', note: '每月 1,350 分鐘，轉錄→會議筆記/摘要' },
+      { id: 'proactor-credits', label: 'AI 額度（即時建議/分析）', taskTypes: ['agent', 'research', 'chat', 'data'], limit: 3400, period: 'month', unit: 'credits', note: '每月 3,400，驅動 Proactive AI Advice' },
     ],
   },
 ];
