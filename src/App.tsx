@@ -40,6 +40,7 @@ import { TabMisc } from './components/VedicTabs/TabMisc';
 import { TabReportPrompts } from './components/VedicTabs/TabReportPrompts';
 import RulesReference from './components/RulesReference';
 import ChartLegend from './components/ChartLegend';
+import AIComputeDashboard from './components/AIComputeDashboard';
 import * as XLSX from 'xlsx';
 
 interface SavedChart {
@@ -121,7 +122,7 @@ export default function App() {
   const [isSidereal, setIsSidereal] = useState(true);
   const [ayanamsaType, setAyanamsaType] = useState('Lahiri');
   const [chartData, setChartData] = useState<ChartData | null>(null);
-  const [activeTab, setActiveTab] = useState<'charts' | 'vargas' | 'dashas' | 'data' | 'yogas' | 'transit' | 'sav' | 'analysis' | 'events' | 'rules' | 'reports' | 'solar-return' | 'synastry' | 'medical' | 'grahas' | 'upagrahas' | 'sensitive' | 'arudha' | 'relations' | 'shadbala' | 'misc' | 'almuten-tools'>('charts');
+  const [activeTab, setActiveTab] = useState<'charts' | 'vargas' | 'dashas' | 'data' | 'yogas' | 'transit' | 'sav' | 'analysis' | 'events' | 'rules' | 'reports' | 'solar-return' | 'synastry' | 'medical' | 'grahas' | 'upagrahas' | 'sensitive' | 'arudha' | 'relations' | 'shadbala' | 'misc' | 'almuten-tools' | 'ai-compute'>('charts');
   const [selectedVarga, setSelectedVarga] = useState('D1');
   const [expandedDasha, setExpandedDasha] = useState<string | null>(null);
   const [expandedSubDasha, setExpandedSubDasha] = useState<string | null>(null);
@@ -1164,6 +1165,7 @@ export default function App() {
               { id: 'misc', label: '其他 (Misc)' },
               { id: 'reports', label: '智能分析報告 (Reports)' },
               { id: 'almuten-tools', label: '🔮 宮位高階工具 (Almuten Tools)' },
+              { id: 'ai-compute', label: '🧮 AI 算力調配 (AI Compute)' },
               { id: 'rules', label: '規則 (Rules & Logic)' }
             ].map(tab => (
               <button
@@ -1180,7 +1182,9 @@ export default function App() {
 
           {/* Tab Content */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 min-h-[600px]">
-            {!chartData ? (
+            {activeTab === 'ai-compute' ? (
+              <AIComputeDashboard />
+            ) : !chartData ? (
               <div className="flex items-center justify-center h-full text-gray-400">
                 請點擊左側「計算星盤」
               </div>
